@@ -1,4 +1,16 @@
-"""Neutral Minds — Medical Triage Expert System (Python CLI + Prolog integration)."""
+"""
+Neutral Minds — Medical Triage Expert System
+Python Interface Layer (CLI + pyswip integration)
+
+This module is the INTERFACE ONLY. All medical reasoning and triage logic
+is implemented in the Prolog knowledge base (knowledge_base/expert_system.pl).
+
+Python responsibilities:
+  1. Collect user input (symptom selection)
+  2. Assert/retract symptom facts into the Prolog engine via pyswip
+  3. Query Prolog for triage results
+  4. Display results to the user
+"""
 
 import sys
 from pathlib import Path
@@ -12,7 +24,8 @@ except ImportError:
     sys.exit(1)
 
 
-KB_PATH = Path(__file__).parent / "triage_kb.pl"
+# Path to the Prolog knowledge base (relative to this file's directory)
+KB_PATH = Path(__file__).resolve().parent.parent / "knowledge_base" / "expert_system.pl"
 
 DISCLAIMER = """
 ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -23,10 +36,12 @@ DISCLAIMER = """
 ║  It does NOT replace professional medical advice, diagnosis, or treatment. ║
 ║                                                                            ║
 ║  If you are experiencing a medical emergency, call your local emergency    ║
+║  services immediately.                                                     ║
 ║                                                                            ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
+# ANSI colour codes for terminal output
 URGENCY_COLORS = {
     "critical": "\033[91m",
     "urgent":   "\033[93m",
@@ -38,8 +53,20 @@ RESET_COLOR = "\033[0m"
 BOLD = "\033[1m"
 
 
+# ---------------------------------------------------------------------------
+# Prolog Engine Wrapper
+# ---------------------------------------------------------------------------
+
 class TriageEngine:
-    """Wraps pyswip's Prolog interface for symptom management and triage querying."""
+    """
+    Thin wrapper around pyswip that manages Prolog communication.
+
+    All triage reasoning happens inside the Prolog knowledge base.
+    This class only:
+      - loads the KB
+      - asserts / retracts symptom facts
+      - queries Prolog for results
+    """
 
     def __init__(self, kb_path: str | Path = KB_PATH):
         self.prolog = Prolog()
@@ -47,28 +74,42 @@ class TriageEngine:
         if not Path(kb_path).exists():
             raise FileNotFoundError(f"Knowledge base not found: {kb_path}")
         self.prolog.consult(kb_posix)
+        # Start with a clean symptom state
         list(self.prolog.query("clear_symptoms"))
 
+    # --- Symptom management (delegates to Prolog predicates) ---
+
     def add_symptom(self, symptom: str) -> None:
+        """Assert a symptom fact in Prolog."""
         list(self.prolog.query(f"add_symptom({symptom})"))
 
     def remove_symptom(self, symptom: str) -> None:
+        """Retract a symptom fact from Prolog."""
         list(self.prolog.query(f"remove_symptom({symptom})"))
 
     def clear_symptoms(self) -> None:
+        """Remove all asserted symptom facts."""
         list(self.prolog.query("clear_symptoms"))
 
     def get_current_symptoms(self) -> list[str]:
+        """Query Prolog for the list of currently asserted symptoms."""
         results = list(self.prolog.query("current_symptoms(S)"))
         if results:
             return [str(s) for s in results[0]["S"]]
         return []
 
     def get_available_symptoms(self) -> list[tuple[str, str]]:
+        """Query Prolog for all recognized symptom IDs and descriptions."""
         results = list(self.prolog.query("available_symptom(Id, Desc)"))
         return [(str(r["Id"]), str(r["Desc"])) for r in results]
 
+    # --- Triage queries (all reasoning happens in Prolog) ---
+
     def run_triage(self) -> tuple[str, list[str]]:
+        """
+        Query Prolog's triage/2 predicate.
+        Returns (urgency_level, [explanation_strings]).
+        """
         results = list(self.prolog.query("triage(Level, Explanations)"))
         if results:
             level = str(results[0]["Level"])
@@ -77,6 +118,10 @@ class TriageEngine:
         return "none", ["Unable to determine triage level."]
 
     def run_triage_all(self) -> list[tuple[str, list[str]]]:
+        """
+        Query Prolog for ALL matching urgency levels (not just the highest).
+        Useful for showing the full reasoning breakdown to the user.
+        """
         all_levels = []
         for level in ["critical", "urgent", "moderate", "low"]:
             results = list(self.prolog.query(
@@ -88,6 +133,10 @@ class TriageEngine:
                 all_levels.append((level, explanations))
         return all_levels
 
+
+# ---------------------------------------------------------------------------
+# Display helpers (presentation only — no reasoning logic)
+# ---------------------------------------------------------------------------
 
 def print_banner():
     print(f"""
@@ -105,6 +154,7 @@ def print_disclaimer():
 
 
 def display_symptom_menu(symptoms: list[tuple[str, str]]):
+    """Print the numbered list of available symptoms."""
     print(f"\n{BOLD}Available Symptoms:{RESET_COLOR}")
     print("-" * 50)
     for i, (sid, desc) in enumerate(symptoms, 1):
@@ -118,6 +168,7 @@ def display_symptom_menu(symptoms: list[tuple[str, str]]):
 
 def display_triage_result(level: str, explanations: list[str],
                           all_levels: list[tuple[str, list[str]]] | None = None):
+    """Format and display the triage result returned by Prolog."""
     color = URGENCY_COLORS.get(level, "")
 
     print(f"\n{'=' * 70}")
@@ -132,7 +183,7 @@ def display_triage_result(level: str, explanations: list[str],
         print(f"\n{BOLD}Other matching levels (lower priority):{RESET_COLOR}")
         for lvl, exps in all_levels:
             if lvl == level:
-                continue  # already shown above
+                continue
             lvl_color = URGENCY_COLORS.get(lvl, "")
             print(f"\n  {lvl_color}[{lvl.upper()}]{RESET_COLOR}")
             for exp in exps:
@@ -150,7 +201,12 @@ def display_triage_result(level: str, explanations: list[str],
     print()
 
 
+# ---------------------------------------------------------------------------
+# Interactive CLI loop
+# ---------------------------------------------------------------------------
+
 def run_interactive():
+    """Main interactive loop: collect symptoms, query Prolog, display results."""
     print_banner()
     print_disclaimer()
 
@@ -189,13 +245,13 @@ def run_interactive():
             continue
 
         entries = [c.strip() for c in choice.split(",")]
-
         should_run_triage = False
 
         for entry in entries:
             try:
                 num = int(entry)
             except ValueError:
+                # Allow entering symptom IDs by name
                 matching = [s for s, d in available if s == entry.lower().replace(" ", "_")]
                 if matching:
                     sym_id = matching[0]
@@ -235,6 +291,7 @@ def run_interactive():
                 print("\n  ⚠ No symptoms selected. Please add at least one symptom.")
                 continue
 
+            # Query Prolog for the triage result
             level, explanations = engine.run_triage()
 
             try:
@@ -260,8 +317,17 @@ def run_interactive():
                 break
 
 
+# ---------------------------------------------------------------------------
+# Programmatic API (used by test suite and external callers)
+# ---------------------------------------------------------------------------
+
 def run_triage_for_symptoms(symptoms: list[str]) -> dict:
-    """Programmatic API: returns triage result dict for a list of symptom IDs."""
+    """
+    Programmatic API: run triage for a given list of symptom IDs.
+
+    Returns a dict with keys: level, explanations, all_levels, symptoms.
+    All reasoning is performed by Prolog; this function only marshals data.
+    """
     engine = TriageEngine()
 
     for symptom in symptoms:

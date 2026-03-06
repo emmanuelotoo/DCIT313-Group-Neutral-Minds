@@ -1,8 +1,15 @@
-# Triage  System
+# Neutral Minds — Medical Triage Expert System
+
+## Names and Id's
+
+Emmanuel Otoo - 22146178
+
 
 ## Overview
 
-A rule-based expert system using **Prolog** for inference and **Python** for the user interface. Classifies symptom urgency as Critical, Urgent, Moderate, or Low using backward chaining.
+A rule-based expert system using **SWI-Prolog** for inference and **Python (pyswip)** for the user interface. Classifies symptom urgency as **Critical**, **Urgent**, **Moderate**, or **Low** using backward chaining.
+
+All medical reasoning is implemented in Prolog rules. Python acts only as the interface layer — collecting user input, querying the Prolog engine, and displaying results.
 
 ## Prerequisites
 
@@ -14,16 +21,24 @@ A rule-based expert system using **Prolog** for inference and **Python** for the
 
 ```bash
 pip install -r requirements.txt
-python triage.py
+python interface/main.py
 ```
 
 ## Project Structure
 
 ```
-triage_kb.pl       Prolog knowledge base — symptoms, rules, inference engine
-triage.py          Python CLI + pyswip integration
-test_triage.py     Automated test suite (28 tests)
-requirements.txt   Python dependencies
+/knowledge_base
+    expert_system.pl          Prolog knowledge base — symptoms, rules, inference engine
+
+/interface
+    main.py                   Python CLI + pyswip integration (interface only)
+
+/docs
+    knowledge_engineering_report.md   Knowledge engineering documentation
+
+test_triage.py                Automated test suite (30 tests)
+requirements.txt              Python dependencies
+README.md                     This file
 ```
 
 ## How It Works
@@ -32,10 +47,11 @@ requirements.txt   Python dependencies
 2. Python asserts symptom facts into Prolog at runtime via pyswip
 3. Prolog evaluates rules in priority order (Critical → Urgent → Moderate → Low) using backward chaining
 4. The highest matching urgency level is returned with explanations of which rules fired
+5. Rules use negation-as-failure (`not_has/1`) to avoid double-firing across levels
 
 ### Adding Rules
 
-Add a `triage_rule/3` clause and `available_symptom/2` fact in `triage_kb.pl` — no Python changes needed:
+Add a `triage_rule/3` clause and `available_symptom/2` fact in `knowledge_base/expert_system.pl` — no Python changes needed:
 
 ```prolog
 triage_rule(urgent, rule_burns,
@@ -52,6 +68,15 @@ python test_triage.py
 # or
 pytest test_triage.py -v
 ```
+
+## Documentation
+
+See [docs/knowledge_engineering_report.md](docs/knowledge_engineering_report.md) for the full knowledge engineering report covering:
+- Knowledge acquisition process
+- Knowledge representation (facts and rules)
+- Reasoning model (backward chaining with priority)
+- Example queries and outputs
+- Architecture diagram
 
 ## License
 
