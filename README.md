@@ -5,6 +5,7 @@
 *  Emmanuel Otoo - 22146178
 *  Senyo Senaya - 22020018
 *  Philipa Araba Sarah Yeboah - 22203063
+*  Ivan Kwamena Johnson - 22066844
 
 
 ## Overview
