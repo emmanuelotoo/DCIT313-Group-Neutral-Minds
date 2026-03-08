@@ -12,6 +12,7 @@ Python responsibilities:
   4. Display results to the user
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -22,6 +23,42 @@ except ImportError:
     print("Install it with:  pip install pyswip")
     print("Also ensure SWI-Prolog is installed and on your system PATH.")
     sys.exit(1)
+
+
+def safe_input(prompt: str = "") -> str:
+    """Read a line from the user, bypassing SWI-Prolog stdin interference.
+
+    On Windows, uses msvcrt to read directly from the console via the
+    Win32 Console API, which is completely independent of C stdin.
+    On Unix, opens /dev/tty as a fallback.
+    """
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    if sys.platform == "win32":
+        import msvcrt
+        chars: list[str] = []
+        while True:
+            ch = msvcrt.getwche()          # read + echo one char
+            if ch in ("\r", "\n"):
+                sys.stdout.write("\n")
+                break
+            elif ch == "\x08":             # Backspace
+                if chars:
+                    chars.pop()
+                    sys.stdout.write(" \x08")
+            elif ch == "\x03":             # Ctrl+C
+                raise KeyboardInterrupt
+            elif ch == "\x1a":             # Ctrl+Z  (EOF on Windows)
+                raise EOFError
+            else:
+                chars.append(ch)
+        return "".join(chars)
+    else:
+        with open("/dev/tty", "r") as tty:
+            line = tty.readline()
+            if not line:
+                raise EOFError
+            return line.rstrip("\n").rstrip("\r")
 
 
 # Path to the Prolog knowledge base (relative to this file's directory)
@@ -74,6 +111,8 @@ class TriageEngine:
         if not Path(kb_path).exists():
             raise FileNotFoundError(f"Knowledge base not found: {kb_path}")
         self.prolog.consult(kb_posix)
+        # Prevent SWI-Prolog from grabbing terminal control
+        list(self.prolog.query("set_prolog_flag(tty_control, false)"))
         # Start with a clean symptom state
         list(self.prolog.query("clear_symptoms"))
 
@@ -236,7 +275,7 @@ def run_interactive():
         display_symptom_menu(available)
 
         try:
-            choice = input(f"{BOLD}Enter symptom number(s) (comma-separated) or command: {RESET_COLOR}").strip()
+            choice = safe_input(f"{BOLD}Enter symptom number(s) (comma-separated) or command: {RESET_COLOR}").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\nGoodbye!")
             break
@@ -303,7 +342,7 @@ def run_interactive():
             print_disclaimer()
 
             try:
-                again = input(f"{BOLD}Run another triage? (y/n): {RESET_COLOR}").strip().lower()
+                again = safe_input(f"{BOLD}Run another triage? (y/n): {RESET_COLOR}").strip().lower()
             except (EOFError, KeyboardInterrupt):
                 print("\n\nGoodbye!")
                 break
